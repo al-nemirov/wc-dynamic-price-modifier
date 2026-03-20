@@ -1,19 +1,48 @@
 <?php
 /**
  * Plugin Name: WC Dynamic Price Modifier
+ * Plugin URI:  https://github.com/your-username/wc-dynamic-price-modifier
  * Description: Dynamically modify displayed WooCommerce prices without changing the database.
- * Version: 1.3
- * Author: Alexander Nemirov
+ * Version:     1.3
+ * Author:      Alexander Nemirov
+ * Author URI:  https://github.com/your-username
+ * License:     MIT
+ * License URI: https://opensource.org/licenses/MIT
  * Text Domain: wc-dynamic-price
+ * Domain Path: /languages
+ * Requires at least: 5.0
+ * Requires PHP: 5.4
  * Requires Plugins: woocommerce
+ *
+ * Плагин динамически изменяет отображаемые цены WooCommerce на витрине
+ * без модификации значений в базе данных. Поддерживает скидки и наценки
+ * в процентах, исключение товаров, округление и предпросмотр в админке.
+ *
+ * @package    WC_Dynamic_Price_Modifier
+ * @author     Alexander Nemirov
+ * @copyright  2025 Alexander Nemirov
+ * @license    MIT
+ * @version    1.3
  */
 
+// Защита от прямого доступа к файлу
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// Check WooCommerce on activation
+// Проверка наличия WooCommerce при активации плагина
 register_activation_hook(__FILE__, 'wc_dpm_check_woocommerce');
+
+/**
+ * Проверяет наличие WooCommerce при активации плагина.
+ *
+ * Если WooCommerce не установлен или не активирован, плагин деактивируется
+ * и отображается сообщение об ошибке.
+ *
+ * @since 1.0
+ *
+ * @return void
+ */
 function wc_dpm_check_woocommerce() {
     if (!class_exists('WooCommerce')) {
         deactivate_plugins(plugin_basename(__FILE__));
@@ -21,10 +50,21 @@ function wc_dpm_check_woocommerce() {
     }
 }
 
-// Initialize after all plugins loaded
+// Инициализация плагина после загрузки всех плагинов
 add_action('plugins_loaded', 'wc_dpm_init', 20);
 
+/**
+ * Инициализирует плагин после загрузки всех плагинов WordPress.
+ *
+ * Проверяет наличие WooCommerce. Если WooCommerce отсутствует,
+ * выводит уведомление в админке. Иначе создаёт экземпляр основного класса.
+ *
+ * @since 1.0
+ *
+ * @return void
+ */
 function wc_dpm_init() {
+    // Проверяем наличие WooCommerce
     if (!class_exists('WooCommerce')) {
         add_action('admin_notices', function() {
             echo '<div class="error"><p><strong>WC Dynamic Price Modifier:</strong> WooCommerce is required.</p></div>';
@@ -32,42 +72,96 @@ function wc_dpm_init() {
         return;
     }
 
+    // Создаём экземпляр основного класса плагина
     new WC_Dynamic_Price_Modifier();
 }
 
+/**
+ * Основной класс плагина WC Dynamic Price Modifier.
+ *
+ * Управляет модификацией цен WooCommerce на витрине магазина,
+ * настройками в админке и отображением двойных цен (база/витрина).
+ *
+ * @since 1.0
+ */
 class WC_Dynamic_Price_Modifier {
 
+    /**
+     * Процент скидки или наценки.
+     *
+     * @since 1.0
+     * @var float
+     */
     private $discount_percent;
+
+    /**
+     * Тип действия: 'decrease' (скидка) или 'increase' (наценка).
+     *
+     * @since 1.0
+     * @var string
+     */
     private $action_type;
+
+    /**
+     * Включён ли модификатор цен.
+     *
+     * @since 1.0
+     * @var bool
+     */
     private $enabled;
+
+    /**
+     * Массив ID товаров, исключённых из модификации.
+     *
+     * @since 1.2
+     * @var int[]
+     */
     private $excluded_products;
 
+    /**
+     * Конструктор класса. Загружает настройки и регистрирует хуки.
+     *
+     * Загружает опции из базы данных, регистрирует меню админки,
+     * подключает фильтры цен для витрины и AJAX,
+     * а также добавляет отображение двойных цен в админке.
+     *
+     * @since 1.0
+     */
     public function __construct() {
+        // Загрузка настроек из базы данных
         $this->enabled = get_option('wc_dpm_enabled', 'no') === 'yes';
         $this->discount_percent = floatval(get_option('wc_dpm_discount_percent', 20));
         $this->action_type = get_option('wc_dpm_action_type', 'decrease');
         $this->excluded_products = $this->get_excluded_products();
 
+        // Регистрация меню и настроек в админке
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
 
+        // Подключение фильтров только если модификатор включён
         if ($this->enabled) {
+            // Фильтры цен для витрины и AJAX-запросов (не для админки)
             if (!is_admin() || wp_doing_ajax()) {
+                // Фильтры для простых товаров
                 add_filter('woocommerce_product_get_price', array($this, 'modify_price'), 99, 2);
                 add_filter('woocommerce_product_get_regular_price', array($this, 'modify_price'), 99, 2);
                 add_filter('woocommerce_product_get_sale_price', array($this, 'modify_price'), 99, 2);
 
+                // Фильтры для вариаций
                 add_filter('woocommerce_product_variation_get_price', array($this, 'modify_price'), 99, 2);
                 add_filter('woocommerce_product_variation_get_regular_price', array($this, 'modify_price'), 99, 2);
                 add_filter('woocommerce_product_variation_get_sale_price', array($this, 'modify_price'), 99, 2);
 
+                // Фильтры для диапазона цен вариаций
                 add_filter('woocommerce_variation_prices_price', array($this, 'modify_variation_price'), 99, 3);
                 add_filter('woocommerce_variation_prices_regular_price', array($this, 'modify_variation_price'), 99, 3);
                 add_filter('woocommerce_variation_prices_sale_price', array($this, 'modify_variation_price'), 99, 3);
 
+                // Модификация хэша для инвалидации кэша вариаций
                 add_filter('woocommerce_get_variation_prices_hash', array($this, 'add_hash_modifier'), 99, 1);
             }
 
+            // Отображение двойных цен и дополнительной колонки в админке
             if (is_admin()) {
                 add_action('woocommerce_product_options_pricing', array($this, 'show_dual_prices_simple'));
                 add_action('woocommerce_variation_options_pricing', array($this, 'show_dual_prices_variation'), 10, 3);
@@ -78,17 +172,40 @@ class WC_Dynamic_Price_Modifier {
         }
     }
 
+    /**
+     * Получает список ID исключённых товаров из настроек.
+     *
+     * Парсит строку с ID (через запятую, пробел или перенос строки),
+     * приводит к целым числам и убирает дубликаты.
+     *
+     * @since 1.2
+     *
+     * @return int[] Массив ID исключённых товаров.
+     */
     private function get_excluded_products() {
         $excluded = get_option('wc_dpm_excluded_products', '');
         if (empty($excluded)) return array();
+        // Разбиваем строку по запятым и пробелам
         $ids = preg_split('/[\s,]+/', $excluded, -1, PREG_SPLIT_NO_EMPTY);
+        // Приводим к целым числам и убираем нулевые значения
         $ids = array_filter(array_map('intval', $ids));
         return array_unique($ids);
     }
 
+    /**
+     * Проверяет, исключён ли товар из модификации цен.
+     *
+     * Для вариаций проверяет как ID самой вариации, так и ID родительского товара.
+     *
+     * @since 1.2
+     *
+     * @param WC_Product $product Объект товара WooCommerce.
+     * @return bool True если товар исключён, false если нет.
+     */
     private function is_product_excluded($product) {
         if (empty($this->excluded_products)) return false;
         $product_id = $product->get_id();
+        // Для вариаций проверяем и ID вариации, и ID родителя
         if ($product->is_type('variation')) {
             $parent_id = $product->get_parent_id();
             return in_array($product_id, $this->excluded_products) || in_array($parent_id, $this->excluded_products);
@@ -96,6 +213,15 @@ class WC_Dynamic_Price_Modifier {
         return in_array($product_id, $this->excluded_products);
     }
 
+    /**
+     * Выводит CSS-стили для админки.
+     *
+     * Стили для колонки цен, информационных блоков и меток исключений.
+     *
+     * @since 1.3
+     *
+     * @return void
+     */
     public function admin_styles() {
         echo '<style>
             .column-actual_price { width: 120px; }
@@ -108,14 +234,43 @@ class WC_Dynamic_Price_Modifier {
         </style>';
     }
 
+    /**
+     * Модифицирует цену простого товара или вариации.
+     *
+     * Применяет скидку или наценку к цене, если товар не исключён
+     * и цена является валидным числом.
+     *
+     * @since 1.0
+     *
+     * @param string|float $price   Текущая цена товара.
+     * @param WC_Product   $product Объект товара WooCommerce.
+     * @return string|float Модифицированная цена или оригинал если товар исключён.
+     */
     public function modify_price($price, $product) {
+        // Пропускаем пустые и нечисловые значения
         if ($price === '' || $price === null || !is_numeric($price)) return $price;
+        // Пропускаем исключённые товары
         if ($this->is_product_excluded($product)) return $price;
         return $this->calculate_new_price(floatval($price));
     }
 
+    /**
+     * Модифицирует цену вариации в диапазоне цен вариативного товара.
+     *
+     * Используется для корректного отображения диапазона "от -- до"
+     * на странице вариативного товара.
+     *
+     * @since 1.1
+     *
+     * @param string|float $price     Текущая цена вариации.
+     * @param int|object   $variation ID или объект вариации.
+     * @param WC_Product   $product   Объект родительского товара.
+     * @return string|float Модифицированная цена или оригинал.
+     */
     public function modify_variation_price($price, $variation, $product) {
+        // Пропускаем пустые и нечисловые значения
         if ($price === '' || $price === null || !is_numeric($price)) return $price;
+        // Проверяем исключение для вариации по ID
         if (is_numeric($variation)) {
             $variation_obj = wc_get_product($variation);
             if ($variation_obj && $this->is_product_excluded($variation_obj)) return $price;
@@ -123,22 +278,51 @@ class WC_Dynamic_Price_Modifier {
         return $this->calculate_new_price(floatval($price));
     }
 
+    /**
+     * Рассчитывает новую цену с учётом скидки/наценки и округления.
+     *
+     * Применяет множитель в зависимости от типа действия (скидка/наценка),
+     * затем округляет результат по настройкам. Минимальная цена -- 0.
+     *
+     * @since 1.0
+     *
+     * @param float $price Исходная цена товара.
+     * @return float Новая цена после модификации и округления.
+     */
     private function calculate_new_price($price) {
+        // Не модифицируем нулевые и отрицательные цены
         if ($price <= 0) return $price;
+        // Вычисляем множитель: скидка уменьшает, наценка увеличивает
         $multiplier = $this->action_type === 'decrease'
             ? (100 - $this->discount_percent) / 100
             : (100 + $this->discount_percent) / 100;
         $new_price = $price * $multiplier;
+        // Применяем округление согласно настройкам
         $round_to = intval(get_option('wc_dpm_round_to', 0));
         if ($round_to > 0) {
+            // Округление до ближайшего значения (1, 10, 50, 100)
             $new_price = round($new_price / $round_to) * $round_to;
         } else {
+            // Без специального округления -- до 2 знаков после запятой
             $new_price = round($new_price, 2);
         }
+        // Цена не может быть отрицательной
         return max(0, $new_price);
     }
 
+    /**
+     * Добавляет данные модификатора в хэш цен вариаций для инвалидации кэша.
+     *
+     * WooCommerce кэширует цены вариаций. Добавление параметров модификатора
+     * в хэш гарантирует обновление кэша при изменении настроек плагина.
+     *
+     * @since 1.1
+     *
+     * @param array $hash Массив параметров хэша цен вариаций.
+     * @return array Модифицированный массив хэша с данными плагина.
+     */
     public function add_hash_modifier($hash) {
+        // Добавляем все параметры, влияющие на расчёт цены
         $hash[] = $this->discount_percent;
         $hash[] = $this->action_type;
         $hash[] = get_option('wc_dpm_round_to', 0);
@@ -146,10 +330,21 @@ class WC_Dynamic_Price_Modifier {
         return $hash;
     }
 
+    /**
+     * Добавляет колонку "Display Price" в список товаров в админке.
+     *
+     * Колонка вставляется сразу после стандартной колонки "Price".
+     *
+     * @since 1.3
+     *
+     * @param array $columns Ассоциативный массив колонок таблицы товаров.
+     * @return array Массив колонок с добавленной колонкой 'actual_price'.
+     */
     public function add_price_column($columns) {
         $new_columns = array();
         foreach ($columns as $key => $value) {
             $new_columns[$key] = $value;
+            // Вставляем нашу колонку после стандартной колонки цены
             if ($key === 'price') {
                 $new_columns['actual_price'] = 'Display Price';
             }
@@ -157,18 +352,34 @@ class WC_Dynamic_Price_Modifier {
         return $new_columns;
     }
 
+    /**
+     * Рендерит содержимое колонки "Display Price" для каждого товара.
+     *
+     * Показывает модифицированную цену и процент скидки/наценки,
+     * или метку "EXCLUDED" для исключённых товаров.
+     *
+     * @since 1.3
+     *
+     * @param string $column  Идентификатор текущей колонки.
+     * @param int    $post_id ID поста (товара).
+     * @return void
+     */
     public function render_price_column($column, $post_id) {
+        // Обрабатываем только нашу колонку
         if ($column !== 'actual_price') return;
         if (!function_exists('wc_get_product')) return;
         $product = wc_get_product($post_id);
         if (!$product) return;
         $original = $product->get_regular_price();
+        // Пропускаем товары без валидной цены
         if ($original === '' || !is_numeric($original) || floatval($original) <= 0) { echo '—'; return; }
         $is_excluded = $this->is_product_excluded($product);
         if ($is_excluded) {
+            // Для исключённых товаров показываем оригинальную цену и метку
             echo '<span class="wc-dpm-actual-price">' . wc_price($original) . '</span>';
             echo '<br><span class="wc-dpm-excluded-badge">EXCLUDED</span>';
         } else {
+            // Для обычных товаров показываем модифицированную цену и процент
             $modified = $this->calculate_new_price(floatval($original));
             $percent = round(abs(1 - $modified / floatval($original)) * 100);
             $label = $this->action_type === 'decrease' ? 'discount' : 'markup';
@@ -177,6 +388,16 @@ class WC_Dynamic_Price_Modifier {
         }
     }
 
+    /**
+     * Отображает блок двойных цен на странице редактирования простого товара.
+     *
+     * Показывает информационный блок под полями цен с ценой из базы данных
+     * и модифицированной ценой на витрине. Для исключённых товаров блок жёлтый.
+     *
+     * @since 1.3
+     *
+     * @return void
+     */
     public function show_dual_prices_simple() {
         global $post;
         if (!$post || !function_exists('wc_get_product')) return;
@@ -185,15 +406,18 @@ class WC_Dynamic_Price_Modifier {
         $original = $product->get_regular_price();
         if ($original === '' || !is_numeric($original)) return;
         $is_excluded = $this->is_product_excluded($product);
+        // Выбираем класс блока: обычный (синий) или исключённый (жёлтый)
         $box_class = $is_excluded ? 'wc-dpm-price-box excluded' : 'wc-dpm-price-box';
         echo '<div class="' . esc_attr($box_class) . '">';
         if ($is_excluded) {
+            // Блок для исключённого товара
             echo '<p style="margin: 0 0 10px 0;"><strong>Product excluded from price modification</strong></p>';
             echo '<table>';
             echo '<tr><td>Database price:</td><td><strong>' . wc_price($original) . '</strong></td></tr>';
             echo '<tr><td>Display price:</td><td><strong>' . wc_price($original) . '</strong> <span class="wc-dpm-excluded-badge">UNCHANGED</span></td></tr>';
             echo '</table>';
         } else {
+            // Блок для обычного товара с модифицированной ценой
             $modified = $this->calculate_new_price(floatval($original));
             $action_text = $this->action_type === 'decrease' ? 'discount' : 'markup';
             echo '<p style="margin: 0 0 10px 0;"><strong>Price modifier active (' . esc_html($this->discount_percent) . '% ' . esc_html($action_text) . ')</strong></p>';
@@ -205,6 +429,19 @@ class WC_Dynamic_Price_Modifier {
         echo '</div>';
     }
 
+    /**
+     * Отображает блок двойных цен для вариации на странице редактирования товара.
+     *
+     * Компактный информационный блок показывает цену из базы и цену на витрине
+     * для каждой вариации.
+     *
+     * @since 1.3
+     *
+     * @param int    $loop           Индекс текущей вариации в цикле.
+     * @param array  $variation_data Данные вариации.
+     * @param object $variation      Объект поста вариации (WP_Post).
+     * @return void
+     */
     public function show_dual_prices_variation($loop, $variation_data, $variation) {
         if (!function_exists('wc_get_product')) return;
         $variation_obj = wc_get_product($variation->ID);
@@ -213,10 +450,12 @@ class WC_Dynamic_Price_Modifier {
         if ($original === '' || !is_numeric($original)) return;
         $is_excluded = $this->is_product_excluded($variation_obj);
         if ($is_excluded) {
+            // Жёлтый блок для исключённой вариации
             echo '<div style="background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px; margin: 8px 0; clear: both;">';
             echo '<small><strong>Excluded:</strong> ' . wc_price($original) . ' <span class="wc-dpm-excluded-badge">UNCHANGED</span></small>';
             echo '</div>';
         } else {
+            // Синий блок с двойной ценой для обычной вариации
             $modified = $this->calculate_new_price(floatval($original));
             echo '<div style="background: #f0f6fc; border-left: 3px solid #2271b1; padding: 8px; margin: 8px 0; clear: both;">';
             echo '<small><strong>Display:</strong> <span style="color: #2271b1;">' . wc_price($modified) . '</span> &nbsp;|&nbsp; <strong>Database:</strong> ' . wc_price($original) . '</small>';
@@ -224,6 +463,15 @@ class WC_Dynamic_Price_Modifier {
         }
     }
 
+    /**
+     * Добавляет подменю "Price Modifier" в меню WooCommerce.
+     *
+     * Страница настроек доступна пользователям с правом 'manage_woocommerce'.
+     *
+     * @since 1.0
+     *
+     * @return void
+     */
     public function add_admin_menu() {
         add_submenu_page(
             'woocommerce',
@@ -235,33 +483,62 @@ class WC_Dynamic_Price_Modifier {
         );
     }
 
+    /**
+     * Регистрирует настройки плагина в WordPress Settings API.
+     *
+     * Регистрирует все опции с колбэками санитизации для безопасного
+     * сохранения данных.
+     *
+     * @since 1.0
+     *
+     * @return void
+     */
     public function register_settings() {
+        // Включение/выключение модификатора
         register_setting('wc_dpm_settings', 'wc_dpm_enabled', array(
             'sanitize_callback' => function($val) { return $val === 'yes' ? 'yes' : 'no'; }
         ));
+        // Процент скидки/наценки (от 0.1 до 99)
         register_setting('wc_dpm_settings', 'wc_dpm_discount_percent', array(
             'sanitize_callback' => function($val) { return max(0.1, min(99, floatval($val))); }
         ));
+        // Тип действия: скидка или наценка
         register_setting('wc_dpm_settings', 'wc_dpm_action_type', array(
             'sanitize_callback' => function($val) { return in_array($val, ['decrease', 'increase']) ? $val : 'decrease'; }
         ));
+        // Шаг округления (0 = без округления)
         register_setting('wc_dpm_settings', 'wc_dpm_round_to', array(
             'sanitize_callback' => function($val) { $a = [0,1,10,50,100]; return in_array(intval($val), $a) ? intval($val) : 0; }
         ));
+        // Список исключённых товаров (текстовое поле)
         register_setting('wc_dpm_settings', 'wc_dpm_excluded_products', array(
             'sanitize_callback' => 'sanitize_textarea_field'
         ));
     }
 
+    /**
+     * Рендерит страницу настроек плагина в админке.
+     *
+     * Отображает форму с настройками модификатора, статусные уведомления,
+     * а также таблицу предпросмотра с 15 товарами. При сохранении настроек
+     * автоматически очищает кэш цен WooCommerce.
+     *
+     * @since 1.0
+     *
+     * @return void
+     */
     public function admin_page() {
-        // Clear cache on settings update
+        // Очистка кэша цен при обновлении настроек
         if (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
+            // Удаляем транзиенты цен товаров
             if (function_exists('wc_delete_product_transients')) wc_delete_product_transients();
             delete_transient('wc_var_prices');
+            // Удаляем все транзиенты цен вариаций из базы данных
             global $wpdb;
             $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", '%_wc_var_prices_%'));
         }
 
+        // Загружаем текущие значения настроек
         $enabled = get_option('wc_dpm_enabled', 'no');
         $discount = get_option('wc_dpm_discount_percent', 20);
         $action = get_option('wc_dpm_action_type', 'decrease');
@@ -366,14 +643,17 @@ class WC_Dynamic_Price_Modifier {
                 </thead>
                 <tbody>
                     <?php
+                    // Загружаем 15 опубликованных простых товаров для предпросмотра
                     $preview_products = wc_get_products(array('limit' => 15, 'status' => 'publish', 'type' => 'simple'));
                     if (empty($preview_products)) echo '<tr><td colspan="6">No products to display</td></tr>';
                     foreach ($preview_products as $product):
                         $original_price = $product->get_regular_price();
+                        // Пропускаем товары без валидной цены
                         if ($original_price === '' || !is_numeric($original_price)) continue;
                         $original_float = floatval($original_price);
                         if ($original_float <= 0) continue;
                         $is_excluded = $this->is_product_excluded($product);
+                        // Рассчитываем модифицированную цену (или оставляем оригинал для исключённых)
                         $modified_price = $is_excluded ? $original_float : $this->calculate_new_price($original_float);
                         $diff = $modified_price - $original_float;
                     ?>
