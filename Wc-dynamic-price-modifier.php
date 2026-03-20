@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: WC Dynamic Price Modifier
- * Plugin URI:  https://github.com/your-username/wc-dynamic-price-modifier
+ * Plugin URI:  https://github.com/al-nemirov/wc-dynamic-price-modifier
  * Description: Dynamically modify displayed WooCommerce prices without changing the database.
- * Version:     1.3
+ * Version:     1.3.1
  * Author:      Alexander Nemirov
- * Author URI:  https://github.com/your-username
+ * Author URI:  https://github.com/al-nemirov
  * License:     MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: wc-dynamic-price
