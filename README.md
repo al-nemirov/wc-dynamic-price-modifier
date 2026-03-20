@@ -56,7 +56,7 @@ Apply discounts or markups across the entire catalog instantly. Prices change on
 
 ```bash
 cd /path/to/wordpress/wp-content/plugins/
-git clone https://github.com/your-username/wc-dynamic-price-modifier.git
+git clone https://github.com/al-nemirov/wc-dynamic-price-modifier.git
 ```
 
 Then activate the plugin in WordPress admin.
