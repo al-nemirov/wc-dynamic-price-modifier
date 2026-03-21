@@ -11,7 +11,7 @@
  * Text Domain: wc-dynamic-price
  * Domain Path: /languages
  * Requires at least: 5.0
- * Requires PHP: 5.4
+ * Requires PHP: 7.4
  * Requires Plugins: woocommerce
  *
  * Плагин динамически изменяет отображаемые цены WooCommerce на витрине
@@ -22,7 +22,7 @@
  * @author     Alexander Nemirov
  * @copyright  2025 Alexander Nemirov
  * @license    MIT
- * @version    1.3
+ * @version    1.3.1
  */
 
 // Защита от прямого доступа к файлу
@@ -119,6 +119,20 @@ class WC_Dynamic_Price_Modifier {
     private $excluded_products;
 
     /**
+     * Tracked option keys for cache invalidation and audit logging.
+     *
+     * @since 1.4
+     * @var string[]
+     */
+    private static $tracked_options = array(
+        'wc_dpm_enabled',
+        'wc_dpm_discount_percent',
+        'wc_dpm_action_type',
+        'wc_dpm_round_to',
+        'wc_dpm_excluded_products',
+    );
+
+    /**
      * Конструктор класса. Загружает настройки и регистрирует хуки.
      *
      * Загружает опции из базы данных, регистрирует меню админки,
@@ -137,6 +151,11 @@ class WC_Dynamic_Price_Modifier {
         // Регистрация меню и настроек в админке
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
+
+        // Очистка кэша и аудит-лог при изменении настроек (POST через options.php)
+        foreach ( self::$tracked_options as $opt ) {
+            add_action( "update_option_{$opt}", array( $this, 'on_option_updated' ), 10, 3 );
+        }
 
         // Подключение фильтров только если модификатор включён
         if ($this->enabled) {
@@ -528,16 +547,6 @@ class WC_Dynamic_Price_Modifier {
      * @return void
      */
     public function admin_page() {
-        // Очистка кэша цен при обновлении настроек
-        if (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
-            // Удаляем транзиенты цен товаров
-            if (function_exists('wc_delete_product_transients')) wc_delete_product_transients();
-            delete_transient('wc_var_prices');
-            // Удаляем все транзиенты цен вариаций из базы данных
-            global $wpdb;
-            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", '%_wc_var_prices_%'));
-        }
-
         // Загружаем текущие значения настроек
         $enabled = get_option('wc_dpm_enabled', 'no');
         $discount = get_option('wc_dpm_discount_percent', 20);
@@ -681,5 +690,86 @@ class WC_Dynamic_Price_Modifier {
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    /**
+     * Обрабатывает обновление опции плагина: очищает кэш и записывает аудит-лог.
+     *
+     * Вызывается хуком update_option_{$option}. Настройки сохраняются через
+     * WordPress Settings API (POST через options.php с nonce-проверкой),
+     * поэтому дополнительная проверка nonce здесь не требуется.
+     *
+     * @since 1.4
+     *
+     * @param mixed  $old_value Старое значение опции.
+     * @param mixed  $new_value Новое значение опции.
+     * @param string $option    Имя опции.
+     * @return void
+     */
+    public function on_option_updated( $old_value, $new_value, $option ) {
+        // Очистка кэша цен WooCommerce
+        $this->flush_wc_price_cache();
+
+        // Запись изменения в аудит-лог
+        $this->log_pricing_change( $option, $old_value, $new_value );
+    }
+
+    /**
+     * Очищает кэш цен WooCommerce через официальный API.
+     *
+     * Использует wc_delete_product_transients() для удаления транзиентов
+     * отдельных товаров и WC_Cache_Helper для инвалидации группы кэша
+     * вариационных цен.
+     *
+     * @since 1.4
+     *
+     * @return void
+     */
+    private function flush_wc_price_cache() {
+        if ( function_exists( 'wc_delete_product_transients' ) ) {
+            wc_delete_product_transients();
+        }
+
+        if ( class_exists( 'WC_Cache_Helper' ) ) {
+            WC_Cache_Helper::invalidate_cache_group( 'products' );
+        }
+
+        delete_transient( 'wc_var_prices' );
+    }
+
+    /**
+     * Записывает изменение настройки ценового модификатора в аудит-лог.
+     *
+     * Лог хранится в опции 'wc_dpm_changelog' (массив записей, макс. 100).
+     * Каждая запись содержит: user_id, timestamp, option, old_value, new_value.
+     *
+     * @since 1.4
+     *
+     * @param string $option    Имя изменённой опции.
+     * @param mixed  $old_value Старое значение.
+     * @param mixed  $new_value Новое значение.
+     * @return void
+     */
+    private function log_pricing_change( $option, $old_value, $new_value ) {
+        $log = get_option( 'wc_dpm_changelog', array() );
+
+        if ( ! is_array( $log ) ) {
+            $log = array();
+        }
+
+        $log[] = array(
+            'user_id'   => get_current_user_id(),
+            'timestamp' => current_time( 'mysql' ),
+            'option'    => $option,
+            'old_value' => $old_value,
+            'new_value' => $new_value,
+        );
+
+        // Хранить не более 100 последних записей
+        if ( count( $log ) > 100 ) {
+            $log = array_slice( $log, -100 );
+        }
+
+        update_option( 'wc_dpm_changelog', $log, false );
     }
 }
