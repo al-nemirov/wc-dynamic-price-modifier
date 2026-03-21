@@ -4,7 +4,7 @@
 ![WooCommerce 3.0+](https://img.shields.io/badge/WooCommerce-3.0%2B-96588a?logo=woocommerce&logoColor=white)
 ![PHP 5.4+](https://img.shields.io/badge/PHP-5.4%2B-777bb4?logo=php&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Version](https://img.shields.io/badge/Version-1.3-blue.svg)
+![Version](https://img.shields.io/badge/Version-1.3.1-blue.svg)
 
 [English](#english) | [Русский](#русский)
 
