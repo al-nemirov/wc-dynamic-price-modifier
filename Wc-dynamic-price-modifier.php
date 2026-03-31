@@ -400,7 +400,7 @@ class WC_Dynamic_Price_Modifier {
         } else {
             // Для обычных товаров показываем модифицированную цену и процент
             $modified = $this->calculate_new_price(floatval($original));
-            $percent = round(abs(1 - $modified / floatval($original)) * 100);
+            $percent = floatval($original) > 0 ? round(abs(1 - $modified / floatval($original)) * 100) : 0;
             $label = $this->action_type === 'decrease' ? 'discount' : 'markup';
             echo '<span class="wc-dpm-actual-price">' . wc_price($modified) . '</span>';
             echo '<br><small style="color: #666;">(' . esc_html($percent) . '% ' . esc_html($label) . ')</small>';
