@@ -791,6 +791,10 @@ class WC_Dynamic_Price_Modifier {
      * @return float Модифицированная цена.
      */
     public static function get_dynamic_price( $price, $product_id = null ) {
+        $price = (float) $price;
+        if ( $price < 0 ) {
+            return 0;
+        }
         if ( get_option( 'wc_dpm_enabled', 'no' ) !== 'yes' ) {
             return $price;
         }
