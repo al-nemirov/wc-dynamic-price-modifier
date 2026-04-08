@@ -157,6 +157,11 @@ class WC_Dynamic_Price_Modifier {
             add_action( "update_option_{$opt}", array( $this, 'on_option_updated' ), 10, 3 );
         }
 
+        // Интеграция с woocommerce-moysklad-sync отключена намеренно:
+        // get_subtotal() уже хранит цену по которой клиент оформил заказ (с учётом DPM),
+        // поэтому повторно применять скидку не нужно — это приведёт к двойной скидке.
+        // add_filter( 'wc_ms_position_price', array( __CLASS__, 'filter_moysklad_position_price' ), 10, 4 );
+
         // Подключение фильтров только если модификатор включён
         if ($this->enabled) {
             // Фильтры цен для витрины и AJAX-запросов (не для админки)
@@ -771,5 +776,63 @@ class WC_Dynamic_Price_Modifier {
         }
 
         update_option( 'wc_dpm_changelog', $log, false );
+    }
+
+    /* ── Публичное API для интеграций ──────────────────────── */
+
+    /**
+     * Рассчитать динамическую цену для заданной суммы.
+     *
+     * Статический метод для использования другими плагинами (например, МойСклад).
+     * Читает текущие настройки (процент, тип, округление) и применяет модификацию.
+     *
+     * @param float    $price      Исходная цена (в рублях/копейках — как передали).
+     * @param int|null $product_id ID товара для проверки исключений (опционально).
+     * @return float Модифицированная цена.
+     */
+    public static function get_dynamic_price( $price, $product_id = null ) {
+        if ( get_option( 'wc_dpm_enabled', 'no' ) !== 'yes' ) {
+            return $price;
+        }
+        if ( $product_id ) {
+            $excluded = array_map( 'intval', array_filter( preg_split( '/[\s,]+/', get_option( 'wc_dpm_excluded_products', '' ) ) ) );
+            if ( in_array( (int) $product_id, $excluded, true ) ) {
+                return $price;
+            }
+            $product = wc_get_product( $product_id );
+            if ( $product && $product->get_parent_id() && in_array( $product->get_parent_id(), $excluded, true ) ) {
+                return $price;
+            }
+        }
+        $percent    = floatval( get_option( 'wc_dpm_discount_percent', 20 ) );
+        $action     = get_option( 'wc_dpm_action_type', 'decrease' );
+        $multiplier = $action === 'decrease' ? ( 100 - $percent ) / 100 : ( 100 + $percent ) / 100;
+        $new_price  = $price * $multiplier;
+        $round_to   = intval( get_option( 'wc_dpm_round_to', 0 ) );
+        if ( $round_to > 0 ) {
+            $new_price = round( $new_price / $round_to ) * $round_to;
+        } else {
+            $new_price = round( $new_price, 2 );
+        }
+        return max( 0, $new_price );
+    }
+
+    /**
+     * Хук для фильтра wc_ms_position_price (интеграция с woocommerce-moysklad-sync).
+     *
+     * Пересчитывает цену позиции заказа по текущим настройкам модификатора.
+     * Фильтр получает и возвращает цену в рублях (конвертация в копейки происходит после).
+     *
+     * @param float                     $price   Цена в рублях.
+     * @param WC_Order_Item_Product     $item    Позиция заказа.
+     * @param WC_Product|null           $product Товар WooCommerce.
+     * @param WC_Order                  $order   Заказ.
+     * @return float Модифицированная цена в рублях.
+     */
+    public static function filter_moysklad_position_price( $price, $item, $product, $order ) {
+        if ( ! $product ) {
+            return $price;
+        }
+        return self::get_dynamic_price( (float) $price, $product->get_id() );
     }
 }
