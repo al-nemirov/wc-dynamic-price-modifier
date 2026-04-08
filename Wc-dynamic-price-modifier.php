@@ -3,7 +3,7 @@
  * Plugin Name: WC Dynamic Price Modifier
  * Plugin URI:  https://github.com/al-nemirov/wc-dynamic-price-modifier
  * Description: Dynamically modify displayed WooCommerce prices without changing the database.
- * Version:     1.3.1
+ * Version:     1.4.0
  * Author:      Alexander Nemirov
  * Author URI:  https://github.com/al-nemirov
  * License:     MIT
@@ -22,7 +22,7 @@
  * @author     Alexander Nemirov
  * @copyright  2025 Alexander Nemirov
  * @license    MIT
- * @version    1.3.1
+ * @version    1.4.0
  */
 
 // Защита от прямого доступа к файлу
